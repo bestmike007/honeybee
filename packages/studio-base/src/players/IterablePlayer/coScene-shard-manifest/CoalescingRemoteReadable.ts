@@ -48,6 +48,8 @@ type ActiveFetch = {
   offset: bigint;
   end: bigint;
   abortController: AbortController;
+  externalAbortSignal?: AbortSignal;
+  externalAbortHandler?: () => void;
   buffer: Uint8Array;
   bytesDownloaded: number;
   waiters: { needed: number; resolve: () => void; reject: (e: unknown) => void }[];
@@ -59,15 +61,22 @@ export class CoalescingRemoteReadable implements McapTypes.IReadable {
   #url: string;
   #readAhead: bigint;
   #fileSize: bigint;
+  #abortSignal?: AbortSignal;
   #active?: ActiveFetch;
 
-  public constructor(url: string, readAheadBytes: number, fileSizeBytes: number) {
+  public constructor(
+    url: string,
+    readAheadBytes: number,
+    fileSizeBytes: number,
+    abortSignal?: AbortSignal,
+  ) {
     if (!Number.isFinite(fileSizeBytes) || fileSizeBytes < 0) {
       throw new Error(`CoalescingRemoteReadable invalid file size: ${fileSizeBytes}`);
     }
     this.#url = url;
     this.#readAhead = BigInt(Math.max(0, Math.floor(readAheadBytes)));
     this.#fileSize = BigInt(Math.floor(fileSizeBytes));
+    this.#abortSignal = abortSignal;
   }
 
   public async open(): Promise<void> {
@@ -79,6 +88,10 @@ export class CoalescingRemoteReadable implements McapTypes.IReadable {
   }
 
   public async read(offset: bigint, size: bigint): Promise<Uint8Array> {
+    if (isAborted(this.#abortSignal)) {
+      throw abortError();
+    }
+
     if (size === 0n) {
       return new Uint8Array();
     }
@@ -102,8 +115,11 @@ export class CoalescingRemoteReadable implements McapTypes.IReadable {
       return active.buffer.subarray(localStart, neededBytes);
     }
 
-    // Miss: abort any in-flight fetch and start a new streaming range fetch.
-    if (active != undefined && !active.done) {
+    // Miss: start a new streaming range fetch. If the previous fetch is only
+    // filling read-ahead in the background, abort it; if another read() is
+    // waiting on it, let that fetch finish so concurrent MCAP reads do not
+    // turn an internal cache miss into an AbortError.
+    if (active != undefined && !active.done && active.waiters.length === 0) {
       active.abortController.abort();
     }
 
@@ -116,6 +132,9 @@ export class CoalescingRemoteReadable implements McapTypes.IReadable {
 
     const neededBytes = Number(size);
     await waitForBytes(next, neededBytes);
+    if (isAborted(this.#abortSignal)) {
+      throw abortError();
+    }
     return next.buffer.subarray(0, neededBytes);
   }
 
@@ -132,6 +151,19 @@ export class CoalescingRemoteReadable implements McapTypes.IReadable {
       waiters: [],
       done: false,
     };
+    const externalAbortSignal = this.#abortSignal;
+    if (externalAbortSignal != undefined) {
+      const externalAbortHandler = () => {
+        abortController.abort();
+      };
+      state.externalAbortSignal = externalAbortSignal;
+      state.externalAbortHandler = externalAbortHandler;
+      if (externalAbortSignal.aborted) {
+        abortController.abort();
+      } else {
+        externalAbortSignal.addEventListener("abort", externalAbortHandler, { once: true });
+      }
+    }
 
     const end = offset + size - 1n;
     void runFetch(this.#url, offset, end, sizeNum, abortController.signal, state);
@@ -177,6 +209,14 @@ function asError(value: unknown): Error {
   } catch {
     return new Error("Unknown error");
   }
+}
+
+function abortError(): DOMException {
+  return new DOMException("signal is aborted without reason", "AbortError");
+}
+
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
 }
 
 async function runFetch(
@@ -239,5 +279,9 @@ async function runFetch(
   } catch (err) {
     state.error = err;
     notifyWaiters(state);
+  } finally {
+    if (state.externalAbortSignal != undefined && state.externalAbortHandler != undefined) {
+      state.externalAbortSignal.removeEventListener("abort", state.externalAbortHandler);
+    }
   }
 }
