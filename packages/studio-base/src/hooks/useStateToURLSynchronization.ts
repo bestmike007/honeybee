@@ -9,6 +9,7 @@
 import { useEffect } from "react";
 import { useDebounce } from "use-debounce";
 
+import { Time, toRFC3339String } from "@foxglove/rostime";
 import {
   MessagePipelineContext,
   useMessagePipeline,
@@ -19,6 +20,7 @@ import {
 } from "@foxglove/studio-base/context/CurrentLayoutContext";
 import { PlayerCapabilities } from "@foxglove/studio-base/players/types";
 import { AppURLState, updateAppURLState } from "@foxglove/studio-base/util/appURLState";
+import { isStandalonePlayback } from "@foxglove/studio-base/util/standalonePlayback";
 
 const selectCanSeek = (ctx: MessagePipelineContext) =>
   ctx.playerState.capabilities.includes(PlayerCapabilities.playbackControl);
@@ -30,6 +32,21 @@ function updateUrl(newState: AppURLState) {
   window.history.replaceState(undefined, "", newStateUrl.href);
 }
 
+// Standalone playback keeps all of its state in the URL fragment, so the time is
+// written there (alongside manifestUrl/layoutUrl/profile) rather than the query
+// string. The layout is loaded from layoutUrl, so no layoutId is synced.
+function updateStandaloneTime(time: Time | undefined) {
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, "").replace(/^\?/, ""));
+  if (time) {
+    params.set("time", toRFC3339String(time));
+  } else {
+    params.delete("time");
+  }
+  const url = new URL(window.location.href);
+  url.hash = params.toString();
+  window.history.replaceState(undefined, "", url.href);
+}
+
 /**
  * Syncs our current player state and time with the URL in the address bar.
  * CoScene do not sync stablePlayerUrlState.parameters
@@ -39,20 +56,25 @@ export function useStateToURLSynchronization(): void {
   const currentTime = useMessagePipeline(selectCurrentTime);
   const [debouncedCurrentTime] = useDebounce(currentTime, 500, { maxWait: 500 });
   const layoutId = useCurrentLayoutSelector(selectLayoutId);
+  const standalone = isStandalonePlayback();
 
-  // Sync layoutId with the url.
+  // Sync layoutId with the url. Standalone playback loads its layout from
+  // layoutUrl, so we never write a layoutId.
   useEffect(() => {
-    if (layoutId == undefined) {
+    if (standalone || layoutId == undefined) {
       return;
     }
 
     updateUrl({ layoutId });
-  }, [layoutId]);
+  }, [layoutId, standalone]);
 
   // Sync current time with the url.
   useEffect(() => {
-    updateUrl({
-      time: canSeek ? debouncedCurrentTime : undefined,
-    });
-  }, [canSeek, debouncedCurrentTime]);
+    const time = canSeek ? debouncedCurrentTime : undefined;
+    if (standalone) {
+      updateStandaloneTime(time);
+      return;
+    }
+    updateUrl({ time });
+  }, [canSeek, debouncedCurrentTime, standalone]);
 }

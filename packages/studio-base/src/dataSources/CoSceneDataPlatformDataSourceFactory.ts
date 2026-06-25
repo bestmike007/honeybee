@@ -15,11 +15,8 @@ import {
   IDataSourceFactory,
   DataSourceFactoryInitializeArgs,
 } from "@foxglove/studio-base/context/PlayerSelectionContext";
-import {
-  IterablePlayer,
-  WorkerIterableSource,
-  WorkerSerializedIterableSource,
-} from "@foxglove/studio-base/players/IterablePlayer";
+import { IterablePlayer, WorkerIterableSource } from "@foxglove/studio-base/players/IterablePlayer";
+import { createShardManifestPlayer } from "@foxglove/studio-base/players/IterablePlayer/coScene-shard-manifest/createShardManifestPlayer";
 import { Player } from "@foxglove/studio-base/players/types";
 import { getAppConfig, getDomainConfig } from "@foxglove/studio-base/util/appConfig";
 import { parseAppURLState } from "@foxglove/studio-base/util/appURLState";
@@ -203,36 +200,16 @@ class CoSceneDataPlatformDataSourceFactory implements IDataSourceFactory {
     args: DataSourceFactoryInitializeArgs,
     manifestUrl: string,
   ): Player | undefined {
-    const profile = args.params?.profile;
-    const params: Record<string, string> = { url: manifestUrl };
-    if (profile != undefined) {
-      params.profile = profile;
-    }
-
-    const source = new WorkerSerializedIterableSource({
-      initWorker: () => {
-        // foxglove-depcheck-used: babel-plugin-transform-import-meta
-        return new Worker(
-          new URL(
-            "@foxglove/studio-base/players/IterablePlayer/coScene-shard-manifest/ShardManifestIterableSource.worker",
-            import.meta.url,
-          ),
-        );
-      },
-      initArgs: { params },
-    });
-
-    return new IterablePlayer({
-      metricsCollector: args.metricsCollector,
-      source,
+    return createShardManifestPlayer({
+      manifestUrl,
       sourceId: this.id,
+      profile: args.params?.profile,
+      metricsCollector: args.metricsCollector,
       urlParams: {
         ...definedUrlParams(args.params),
         [SHARD_MODE_PARAM]: SHARD_MODE_MANIFEST,
         [MANIFEST_URL_PARAM]: manifestUrl,
       },
-      readAheadDuration: { sec: 10, nsec: 0 },
-      name: profile ? `Shard manifest (${profile})` : "Shard manifest",
     });
   }
 }

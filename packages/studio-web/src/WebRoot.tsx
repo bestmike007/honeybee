@@ -10,6 +10,7 @@ import { useMemo, useState } from "react";
 import {
   IDataSourceFactory,
   CoSceneDataPlatformDataSourceFactory,
+  CoSceneShardManifestDataSourceFactory,
   FoxgloveWebSocketDataSourceFactory,
   SharedRoot,
   AppBarProps,
@@ -56,6 +57,7 @@ export function WebRoot(props: {
   const dataSources = useMemo(() => {
     const sources = [
       new CoSceneDataPlatformDataSourceFactory(),
+      new CoSceneShardManifestDataSourceFactory(),
       new FoxgloveWebSocketDataSourceFactory(),
       new PersistentCacheDataSourceFactory(),
     ];

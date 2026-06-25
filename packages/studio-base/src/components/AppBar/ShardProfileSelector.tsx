@@ -14,6 +14,7 @@ import {
   MessagePipelineContext,
   useMessagePipeline,
 } from "@foxglove/studio-base/components/MessagePipeline";
+import { parseStandalonePlaybackParams } from "@foxglove/studio-base/util/standalonePlayback";
 
 type ProfileOption = { value: string; label: string };
 
@@ -34,6 +35,7 @@ const SHARD_MODE_PARAM = "shardMode";
 const SHARD_MODE_MANIFEST = "manifest";
 const SHARD_MODE_RAW = "raw";
 const MANIFEST_URL_PARAM = "manifestUrl";
+const SHARD_MANIFEST_SOURCE_ID = "coscene-shard-manifest";
 
 const selectUrlState = (ctx: MessagePipelineContext) => ctx.playerState.urlState;
 
@@ -78,13 +80,24 @@ export function ShardProfileSelector(): React.JSX.Element | ReactNull {
     }
     return new URLSearchParams(window.location.search);
   }, []);
+  // Standalone playback carries the manifest URL and profile in the URL fragment.
+  const standalone = useMemo(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+    return parseStandalonePlaybackParams(window.location.hash);
+  }, []);
 
-  const isShardManifest =
+  const isStandalone = urlState?.sourceId === SHARD_MANIFEST_SOURCE_ID;
+  const isDataPlatformShard =
     urlState?.sourceId === "coscene-data-platform" &&
     (urlState.parameters?.[SHARD_MODE_PARAM] === SHARD_MODE_MANIFEST ||
       urlState.parameters?.[SHARD_MODE_PARAM] === SHARD_MODE_RAW);
-  const manifestUrl = urlState?.parameters?.[MANIFEST_URL_PARAM] ?? "";
-  const currentProfile = search.get("ds.profile") ?? "";
+  const isShardManifest = isStandalone || isDataPlatformShard;
+  const manifestUrl = isStandalone
+    ? standalone?.manifestUrl ?? ""
+    : urlState?.parameters?.[MANIFEST_URL_PARAM] ?? "";
+  const currentProfile = isStandalone ? standalone?.profile ?? "" : search.get("ds.profile") ?? "";
   const rawOption = useMemo<ProfileOption>(
     () => ({ value: RAW_PROFILE, label: t("rawData") }),
     [t],
@@ -124,21 +137,41 @@ export function ShardProfileSelector(): React.JSX.Element | ReactNull {
   }, [isShardManifest, manifestUrl]);
 
   const options = useMemo(() => {
+    // Standalone playback only offers the manifest's encoded profiles, no raw passthrough.
+    if (isStandalone) {
+      return profileOptions.filter((opt) => opt.value !== RAW_PROFILE);
+    }
     if (profileOptions.some((opt) => opt.value === RAW_PROFILE)) {
       return profileOptions;
     }
     return [...profileOptions, rawOption];
-  }, [profileOptions, rawOption]);
+  }, [profileOptions, rawOption, isStandalone]);
 
-  const onChange = useCallback((value: string) => {
-    const next = new URLSearchParams(window.location.search);
-    if (value !== "") {
-      next.set("ds.profile", value);
-    } else {
-      next.delete("ds.profile");
-    }
-    window.location.search = next.toString();
-  }, []);
+  const onChange = useCallback(
+    (value: string) => {
+      if (isStandalone) {
+        // Profile lives in the fragment; rewrite it and reload so the player
+        // re-initializes with the new profile.
+        const next = new URLSearchParams(window.location.hash.replace(/^#/, "").replace(/^\?/, ""));
+        if (value !== "") {
+          next.set("profile", value);
+        } else {
+          next.delete("profile");
+        }
+        window.location.hash = next.toString();
+        window.location.reload();
+        return;
+      }
+      const next = new URLSearchParams(window.location.search);
+      if (value !== "") {
+        next.set("ds.profile", value);
+      } else {
+        next.delete("ds.profile");
+      }
+      window.location.search = next.toString();
+    },
+    [isStandalone],
+  );
 
   if (!isShardManifest) {
     return ReactNull;

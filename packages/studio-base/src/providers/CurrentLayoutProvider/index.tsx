@@ -22,6 +22,7 @@ import CurrentLayoutContext, {
   ICurrentLayout,
   LayoutID,
   LayoutState,
+  SelectedLayout,
 } from "@foxglove/studio-base/context/CurrentLayoutContext";
 import {
   AddPanelPayload,
@@ -249,10 +250,31 @@ export default function CurrentLayoutProvider({
     };
   }, [enqueueSnackbar, layoutManager, setSelectedLayoutId]);
 
+  // Apply a layout in-memory without persisting it to the layout manager. Used
+  // by standalone playback to apply a layout fetched directly from a URL.
+  const setCurrentLayout = useCallback(
+    (newLayout: SelectedLayout | undefined) => {
+      if (newLayout == undefined) {
+        setLayoutState({ selectedLayout: undefined });
+        return;
+      }
+      setLayoutState({
+        selectedLayout: {
+          id: uuidv4() as LayoutID,
+          loading: false,
+          data: newLayout.data,
+          name: newLayout.name,
+          edited: newLayout.edited,
+        },
+      });
+    },
+    [setLayoutState],
+  );
+
   const actions: ICurrentLayout["actions"] = useMemo(
     () => ({
       updateSharedPanelState,
-      setCurrentLayout: () => {},
+      setCurrentLayout,
       setSelectedLayoutId,
       getCurrentLayoutState: () => layoutStateRef.current,
 
@@ -339,7 +361,14 @@ export default function CurrentLayoutProvider({
         performAction({ type: "END_DRAG", payload });
       },
     }),
-    [analytics, performAction, setSelectedLayoutId, setSelectedPanelIds, updateSharedPanelState],
+    [
+      analytics,
+      performAction,
+      setCurrentLayout,
+      setSelectedLayoutId,
+      setSelectedPanelIds,
+      updateSharedPanelState,
+    ],
   );
 
   const value: ICurrentLayout = useShallowMemo({

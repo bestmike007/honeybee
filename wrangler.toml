@@ -1,0 +1,6 @@
+# Cloudflare Pages config for temporary/preview deploys of the web build.
+# Deploy with: yarn web:deploy:cf  (builds web first, then uploads via wrangler)
+# See ci/deploy-cf-pages.ts for staging details and required auth env vars.
+name = "honeybee-temp"
+compatibility_date = "2024-12-01"
+pages_build_output_dir = "dist/cf-pages"

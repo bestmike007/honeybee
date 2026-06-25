@@ -50,6 +50,7 @@ import RemountOnValueChange from "@foxglove/studio-base/components/RemountOnValu
 import { SidebarContent } from "@foxglove/studio-base/components/SidebarContent";
 import { Sidebars, SidebarItem } from "@foxglove/studio-base/components/Sidebars";
 import Stack from "@foxglove/studio-base/components/Stack";
+import { StandalonePlaybackAdapter } from "@foxglove/studio-base/components/StandalonePlaybackAdapter";
 import { StudioLogsSettings } from "@foxglove/studio-base/components/StudioLogsSettings";
 import { SyncAdapters } from "@foxglove/studio-base/components/SyncAdapters";
 import TaskDetailDrawer from "@foxglove/studio-base/components/Tasks/TaskDetailDrawer";
@@ -78,6 +79,7 @@ import { PlayerPresence } from "@foxglove/studio-base/players/types";
 import { PanelStateContextProvider } from "@foxglove/studio-base/providers/PanelStateContextProvider";
 import WorkspaceContextProvider from "@foxglove/studio-base/providers/WorkspaceContextProvider";
 import isDesktopApp from "@foxglove/studio-base/util/isDesktopApp";
+import { windowStandalonePlaybackParams } from "@foxglove/studio-base/util/standalonePlayback";
 
 import { useSubscriptionEntitlement } from "./context/SubscriptionEntitlementContext";
 import { useWorkspaceActions } from "./context/Workspace/useWorkspaceActions";
@@ -164,6 +166,11 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
 
   const { t } = useTranslation("workspace");
   const { AppBarComponent = AppBar } = props;
+
+  // Authless standalone playback driven by URL-fragment params
+  // (`#manifestUrl=…&layoutUrl=…`). When present we drive playback from those
+  // params and skip the data-platform/login deep-link flow entirely.
+  const standalonePlaybackParams = useMemo(() => windowStandalonePlaybackParams(), []);
 
   // file types we support for drag/drop
   const allowedDropExtensions = useMemo(() => {
@@ -404,7 +411,11 @@ function WorkspaceContent(props: WorkspaceProps): React.JSX.Element {
       {dataSourceDialog.open && <DataSourceDialog />}
       <DocumentDropListener onDrop={dropHandler} allowedExtensions={allowedDropExtensions} />
       <SyncAdapters />
-      <DeepLinksSyncAdapter deepLinks={props.deepLinks} />
+      {standalonePlaybackParams ? (
+        <StandalonePlaybackAdapter params={standalonePlaybackParams} />
+      ) : (
+        <DeepLinksSyncAdapter deepLinks={props.deepLinks} />
+      )}
       <KeyListener global keyDownHandlers={keyDownHandlers} />
       <div className={classes.container} ref={containerRef} tabIndex={0}>
         {appBar}

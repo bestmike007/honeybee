@@ -27,6 +27,7 @@
     "web:build:dev": "rspack build --mode development --config web/rspack.config.ts",
     "web:build:prod": "rspack build --mode production --config web/rspack.config.ts",
     "web:serve": "rspack serve --env WEBPACK_SERVE=true --mode development --config web/rspack.config.ts",
+    "web:deploy:cf": "yarn web:build:prod && ts-node ci/deploy-cf-pages.ts",
     "desktop:build:dev": "rspack build --mode development --config desktop/rspack.config.ts",
     "desktop:build:prod": "rspack build --mode production --config desktop/rspack.config.ts",
     "desktop:serve": "rspack serve --env WEBPACK_SERVE=true --mode development --config desktop/rspack.config.ts",

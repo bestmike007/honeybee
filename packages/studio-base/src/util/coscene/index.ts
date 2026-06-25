@@ -16,6 +16,7 @@ import { v4 as uuidv4 } from "uuid";
 import { getAppConfig } from "@foxglove/studio-base/util/appConfig";
 import isDesktopApp from "@foxglove/studio-base/util/isDesktopApp";
 import { ACCESS_TOKEN_NAME } from "@foxglove/studio-base/util/queries";
+import { isStandalonePlayback } from "@foxglove/studio-base/util/standalonePlayback";
 import { Auth } from "@foxglove/studio-desktop/src/common/types";
 
 export * from "./cosel";
@@ -23,7 +24,10 @@ export * from "./cosel";
 const authBridge = (global as { authBridge?: Auth }).authBridge;
 
 export function isAuthlessDataSource(): boolean {
-  return false;
+  // Standalone playback (`#manifestUrl=…`) reads shards and layout directly from
+  // URLs and never talks to the data platform, so it must not be gated behind
+  // login or redirected on a (never-issued) 401.
+  return isStandalonePlayback();
 }
 
 // window.navigator.platform is not reliable, use this function to check os
